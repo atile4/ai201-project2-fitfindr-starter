@@ -271,18 +271,23 @@ Fitfindr needs to take in a query, and return a fit corresponding to what the us
 **Step 1:**
 
 <!-- What does the agent do first? Which tool is called? With what input? -->
+Step 1: The agent calls _parse_query() on the user's query to extract structured parameters. Then it calls search_listings(), using the parameters from _parse_query(), which returns a list of matching listings sorted by relevance.
 
 **Step 2:**
 
 <!-- What happens next? What was returned from step 1? What tool is called now? -->
+Step 2: results is non-empty, so the agent sets session["selected_item"] = results[0] (the top match). It then calls suggest_outfit(selected_item, wardrobe), passing the listing dict and the user's wardrobe. The LLM returns a 3–4 sentence string suggesting specific outfit combinations using named wardrobe pieces.
+
 
 **Step 3:**
 
 <!-- Continue until the full interaction is complete -->
+The agent sets session["outfit_suggestion"] to that string, then calls create_fit_card(outfit_suggestion, selected_item). The LLM returns a 2–4 sentence casual caption mentioning the item name, price, and platform.
 
 **Final output to user:**
 
 <!-- What does the user actually see at the end? -->
+The session dict is returned with three populated fields — selected_item (the listing), outfit_suggestion (how to wear it), and fit_card (the shareable caption). session["error"] is None.
 
 ```
 
