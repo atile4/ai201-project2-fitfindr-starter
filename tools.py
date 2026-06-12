@@ -69,8 +69,36 @@ def search_listings(
 
     Before writing code, fill in the Tool 1 section of planning.md.
     """
-    # Replace this with your implementation
-    return []
+    listings = load_listings()
+
+    # Step 1: Filter by price and size
+    filtered = []
+    for item in listings:
+        if max_price is not None and item["price"] > max_price:
+            continue
+        if size is not None and size.lower() not in item["size"].lower():
+            continue
+        filtered.append(item)
+
+    # Step 2: Score by keyword overlap with description
+    keywords = set(description.lower().split())
+
+    def score(item):
+        searchable = " ".join([
+            item.get("title", ""),
+            item.get("description", ""),
+            item.get("category", ""),
+            item.get("brand") or "",          # brand can be None
+            " ".join(item.get("style_tags", [])),
+            " ".join(item.get("colors", [])),
+        ]).lower()
+        return sum(1 for kw in keywords if kw in searchable)
+
+    # Step 3: Drop zero-score listings and sort by score descending
+    scored = [(score(item), item) for item in filtered]
+    results = [item for s, item in sorted(scored, key=lambda x: x[0], reverse=True) if s > 0]
+
+    return results
 
 
 # ── Tool 2: suggest_outfit ────────────────────────────────────────────────────
@@ -101,8 +129,57 @@ def suggest_outfit(new_item: dict, wardrobe: dict) -> str:
     Before writing code, fill in the Tool 2 section of planning.md.
     """
     # Replace this with your implementation
-    return ""
+    client = _get_groq_client()
 
+    item_summary = (
+        f"{new_item.get('title', 'Unknown item')} "
+        f"({new_item.get('category', '')}, {new_item.get('condition', '')} condition, "
+        f"${new_item.get('price', '?')}) — "
+        f"colors: {', '.join(new_item.get('colors', []))}. "
+        f"Style tags: {', '.join(new_item.get('style_tags', []))}."
+    )
+
+    wardrobe_items = wardrobe.get("items", [])
+
+    if not wardrobe_items:
+        prompt = (
+            f"A user just found this thrifted item: {item_summary}\n\n"
+            "They haven't shared their wardrobe yet. Give them 2–3 sentences of "
+            "general styling advice: what kinds of pieces pair well with this item, "
+            "what vibe or aesthetic it suits, and one specific styling tip "
+            "(e.g. how to wear it, what to tuck or layer). "
+            "Be specific and casual — like advice from a friend, not a fashion magazine."
+        )
+    else:
+        wardrobe_summary = "\n".join(
+            f"- {w.get('name', 'item')}: {w.get('color', '')} {w.get('type', '')}, "
+            f"{w.get('fit', '')} fit, {w.get('style', '')} style"
+            for w in wardrobe_items
+        )
+        prompt = (
+            f"A user just found this thrifted item: {item_summary}\n\n"
+            f"Here's what they already own:\n{wardrobe_summary}\n\n"
+            "Suggest 1–2 complete outfits that combine the new item with specific "
+            "pieces from their wardrobe. Name the wardrobe pieces you're using. "
+            "For each outfit, include one styling tip (e.g. tuck, layer, cuff). "
+            "Keep it to 3–4 sentences total. Sound like a friend, not a stylist."
+        )
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=300,
+            temperature=0.7,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return (
+            f"Couldn't generate outfit suggestions right now. "
+            f"Here's what to know about this piece: "
+            f"{new_item.get('title', 'Unknown')} — "
+            f"${new_item.get('price', '?')} on {new_item.get('platform', 'unknown platform')}."
+        )
 
 # ── Tool 3: create_fit_card ───────────────────────────────────────────────────
 
@@ -133,5 +210,38 @@ def create_fit_card(outfit: str, new_item: dict) -> str:
 
     Before writing code, fill in the Tool 3 section of planning.md.
     """
-    # Replace this with your implementation
-    return ""
+    if not outfit or not outfit.strip():
+        return (
+            "Couldn't generate a fit card — no outfit description was provided."
+        )
+
+    client = _get_groq_client()
+
+    item_details = (
+        f"{new_item.get('title', 'thrifted find')} — "
+        f"${new_item.get('price', '?')} on {new_item.get('platform', 'a thrift app')}, "
+        f"{new_item.get('condition', '')} condition."
+    )
+
+    prompt = (
+        f"Write a 2–4 sentence Instagram caption for this thrifted outfit.\n\n"
+        f"The thrifted item: {item_details}\n"
+        f"The full outfit: {outfit}\n\n"
+        "Rules:\n"
+        "- Sound like a real person posting an OOTD, not a brand or stylist\n"
+        "- Mention the item name, price, and platform naturally (once each)\n"
+        "- Capture the specific vibe of the outfit in your own words\n"
+        "- Keep it to 2–4 sentences, no hashtags\n"
+        "- Lowercase is fine, casual tone preferred"
+    )
+
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.3-70b-versatile",
+            messages=[{"role": "user", "content": prompt}],
+            max_tokens=150,
+            temperature=0.9,
+        )
+        return response.choices[0].message.content.strip()
+    except Exception as e:
+        return "Fit card unavailable right now."
